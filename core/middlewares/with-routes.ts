@@ -16,9 +16,23 @@ const GetRouteQuery = graphql(`
     site {
       route(path: $path, redirectBehavior: FOLLOW) {
         redirect {
-          __typename
           to {
             __typename
+            ... on BlogPostRedirect {
+              path
+            }
+            ... on BrandRedirect {
+              path
+            }
+            ... on CategoryRedirect {
+              path
+            }
+            ... on PageRedirect {
+              path
+            }
+            ... on ProductRedirect {
+              path
+            }
           }
           toUrl
         }
@@ -121,10 +135,14 @@ const StorefrontStatusCacheSchema = z.object({
 });
 
 const RedirectSchema = z.object({
-  __typename: z.string(),
-  to: z.object({
-    __typename: z.string(),
-  }),
+  to: z.union([
+    z.object({ __typename: z.literal('BlogPostRedirect'), path: z.string() }),
+    z.object({ __typename: z.literal('BrandRedirect'), path: z.string() }),
+    z.object({ __typename: z.literal('CategoryRedirect'), path: z.string() }),
+    z.object({ __typename: z.literal('PageRedirect'), path: z.string() }),
+    z.object({ __typename: z.literal('ProductRedirect'), path: z.string() }),
+    z.object({ __typename: z.literal('ManualRedirect') }),
+  ]),
   toUrl: z.string(),
 });
 
@@ -251,17 +269,21 @@ export const withRoutes: MiddlewareFactory = () => {
 
     if (route?.redirect) {
       switch (route.redirect.to.__typename) {
-        case 'ManualRedirect': {
-          // For manual redirects, redirect to the full URL to handle cases
-          // where the destination URL might be external to the site
-          return NextResponse.redirect(route.redirect.toUrl, redirectConfig);
+        case 'BlogPostRedirect':
+        case 'BrandRedirect':
+        case 'CategoryRedirect':
+        case 'PageRedirect':
+        case 'ProductRedirect': {
+          // For dynamic redirects, assume an internal redirect and construct the URL from the path
+          const redirectUrl = new URL(route.redirect.to.path, request.url);
+
+          return NextResponse.redirect(redirectUrl, redirectConfig);
         }
 
         default: {
-          // For all other cases, assume an internal redirect and construct the URL
-          // based on the current request URL to maintain internal redirection
-          // in non-production environments
-          break;
+          // For manual redirects, redirect to the full URL to handle cases
+          // where the destination URL might be external to the site
+          return NextResponse.redirect(route.redirect.toUrl, redirectConfig);
         }
       }
     }
